@@ -1,0 +1,511 @@
+import numpy as np  
+import numpy.random as random 
+import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
+
+%matplotlib inline
+
+# Code for displaying the path
+import json
+import copy
+
+from IPython.core.interactiveshell import InteractiveShell
+
+InteractiveShell.ast_node_interactivity = "all"
+
+map = mpimg.imread("map.png")  # Import the United States map
+
+with open('capitals.json', 'r') as capitals_file: # Import the list of capitals
+    capitals = json.load(capitals_file)
+
+capitals_list = list(capitals.items())
+
+capitals_list = [(c[0], tuple(c[1])) for c in capitals_list] # Cities are stored as tuples
+
+def coord(path): # Separates the coords (Stored as a tuple) from the city name for a single city tuple
+        _, coord = path
+        return coord
+
+def coords(path): # Separates the coords (Stored as a tuple) from the city name for a list of cities
+        _, coords = zip(*path)
+        return coords
+    
+def show_path(path_, starting_city, w=35, h=15): # Displays the path between cities on a map of the United States
+    path=coords(path_);
+    x, y = list(zip(*path))
+    
+    _, (x0, y0) = starting_city
+    
+    plt.imshow(map);
+    plt.plot(x0, y0, 'y*', markersize=15);  # y* = yellow star for starting point
+    plt.plot(x + x[:1], y + y[:1]);  # include the starting point at the end of path
+    plt.axis("off");
+    fig = plt.gcf();
+    fig.set_size_inches([w, h]);
+
+def expTemp(t, decay = 0.95, T0 = 100000000): # Exponential temperature decay function
+    return (decay**t) * T0
+
+def linTemp(t, decay = 1, T0 = 100): # Linear temperature decay function
+    return T0 - decay*t # Decay constant here represents the gradient of the graph
+
+temps95E = []
+temps90E = []
+temps98E = []
+temps100L = []
+temps150L = []
+temps50L = []
+times = []
+for i in range(100): # Simulate 100 iterations of temperature decay
+    temps95E.append(expTemp(i))
+    temps90E.append(expTemp(i, decay = 0.9))
+    temps98E.append(expTemp(i, decay = 0.98))
+    temps100L.append(linTemp(i))
+    temps150L.append(linTemp(i, decay = 1.5))
+    temps50L.append(linTemp(i, decay = 0.5))
+    times.append(i)
+
+# Plot temperature decay
+plt.subplot(2, 1, 1)
+plt.title("Exponential Decay Function")
+plt.plot(times, temps95E, label="α = 0.95", color = "blue")
+plt.plot(times, temps90E, label="α = 0.90", color = "red")
+plt.plot(times, temps98E, label="α = 0.98", color = "green")
+plt.xlabel("Time")
+plt.ylabel("Temperature")
+plt.legend();
+plt.figure()
+plt.subplot(2, 1, 1)
+plt.title("Linear Decay Function")
+plt.plot(times, temps150L, label="α = 1.5", color = "red")
+plt.plot(times, temps100L, label="α = 1.0", color = "blue")
+plt.plot(times, temps50L, label="α = 0.5", color = "green")
+plt.xlabel("Time")
+plt.ylabel("Temperature")
+plt.legend();
+
+def randPath(numCities):
+    capList = [] # List of cities
+    rands = [] # List of random numbers
+    while True: # Continue selecting random numbers until enough unique ones are selected
+        rand = np.random.randint(len(capitals_list))
+        if len(rands) == numCities: # If already selected enough random numbers, stop
+            break
+        elif rand not in rands: # If random number not already selected
+            rands.append(rand)
+            capList.append(capitals_list[rand])
+    return capList
+
+print(randPath(8))
+
+def pathLength(cityPath):
+    roundList = list(coords(cityPath)) + [ coord(cityPath[0]) ] # Convert the path into a list of coordinates and add the starting city to the end of the list
+    pairList = zip( roundList, roundList[1:] ) # Separate this into pairs of consecutive coordinates
+    length = 0 # Initialise the length
+    for i in pairList: # Loop through pairs
+        length += np.sqrt((i[0][0]-i[1][0])**2 + (i[0][1]-i[1][1])**2) # Pythagoras to work out length of this leg of path added to total length
+    return length
+
+testPath = randPath(30)
+show_path(testPath, testPath[0])
+print(pathLength(testPath))
+
+def pairSwap(swapPath, swapPos1, swapPos2):
+    path = swapPath.copy()
+    pos2Copy = path[swapPos2] # Store the second city to be swapped
+    path[swapPos2] = path[swapPos1] # Copy the first city to the second city
+    path[swapPos1] = pos2Copy # Replace the first city with the copy of the second
+    return path
+
+testPath = randPath(8)
+print("Initial path:", testPath)
+print()
+print("Final Path:", pairSwap(testPath, 2, 4))
+
+def simAnnealing(startPath, startTemp = 1000, numSwaps = 200, alpha = 0.97):
+    temps = [] # Define temps and lengths to record values for the plots
+    lengths = []
+    path = startPath.copy() # Copy starting path
+    temp = startTemp # Copy starting temp
+    for i in range(numSwaps): # Loops through for the required number of swaps
+        newPath = pairSwap(path, np.random.randint(len(path)), np.random.randint(len(path))) # Swap a random pair of cities
+        prob = np.exp(-(pathLength(newPath)-pathLength(path))/temp) # Calculate probability of acceptance
+        if np.random.randint(100)/100 < prob: # If random number is less than the probability
+            path = newPath.copy() # Copy the new path to the old path
+        temp = expTemp(i, alpha, startTemp) # Increment the temperature
+        temps.append(temp) # Record the temperature value
+        lengths.append(pathLength(path)) # Record the path length
+        #print(pathLength(path)) # If interested
+    return(path, temps, lengths)
+
+# Testing with 8 cities
+path = randPath(8)
+plt.subplot(2, 1, 1)
+finalPath, temps, lengths = simAnnealing(path, startTemp = 1000, numSwaps = 400, alpha = 0.97)
+show_path(finalPath, finalPath[0])
+plt.figure()
+plt.xscale("log")
+plt.yscale("log")
+plt.xlabel("Temperature")
+plt.ylabel("Path Length")
+plt.title("8 Cities")
+plt.plot(temps,lengths)
+# Start temp of 1000, 200 swaps and 0.9 alpha consistently reaches a local minimum
+
+# Testing with 20 cities
+plt.figure()
+path = randPath(20)
+plt.subplot(2, 1, 1)
+finalPath, temps, lengths = simAnnealing(path, startTemp = 2500, numSwaps = 1000, alpha = 0.97)
+show_path(finalPath, finalPath[0])
+plt.figure()
+plt.xscale("log")
+plt.yscale("log")
+plt.xlabel("Temperature")
+plt.ylabel("Path Length")
+plt.title("20 Cities")
+plt.plot(temps,lengths)
+# Start temp of 10000, 1500 swaps and 0.97 alpha consistently reaches a local minimum
+
+# Testing with 30 cities
+plt.figure()
+path = randPath(30)
+plt.subplot(2, 1, 1)
+finalPath, temps, lengths = simAnnealing(path, startTemp = 5000, numSwaps = 2000, alpha = 0.97)
+show_path(finalPath, finalPath[0])
+plt.figure()
+plt.xscale("log")
+plt.yscale("log")
+plt.xlabel("Temperature")
+plt.ylabel("Path Length")
+plt.title("30 Cities")
+plt.plot(temps,lengths);
+
+results = []
+
+path = randPath(30) # Create a random path to start with
+for i in range(20):
+    finalPath, temps, lengths = simAnnealing(path, startTemp = 40000, numSwaps = 6000, alpha = 0.985) # Generate a shortest path
+    results.append(finalPath) # Add the generated path to the list
+    
+    # Determine whether this is the shortest path yet found
+    showPath = True
+    for j in range(len(results)): # Loop through the found paths
+        if(pathLength(finalPath)>pathLength(results[j])): # If this path is longer than any path yet found, it is not the shortest path found
+            showPath = False
+    if(showPath): # If this is the shortest path yet, record that as i
+        pathToShow = i
+
+# Show the shortest path found
+plt.figure();
+show_path(results[i], results[i][0]);
+
+lengths = []
+for i in range(20):
+    lengths.append(pathLength(results[i]))
+print("Shortest path length: ", lengths[pathToShow]) # Print the length of the path
+
+def simAnnealingLong(startPath, startTemp = 1000, numSwaps = 200, alpha = 0.97):
+    temps = [] # Define temps and lengths to record values for the plots
+    lengths = []
+    path = startPath.copy() # Copy starting path
+    temp = startTemp # Copy starting temp
+    for i in range(numSwaps): # Loops through for the required number of swaps
+        newPath = pairSwap(path, np.random.randint(len(path)), np.random.randint(len(path))) # Swap a random pair of cities
+        prob = np.exp(-(-pathLength(newPath)+pathLength(path))/temp) # Calculate probability of acceptance
+        if np.random.randint(100)/100 < prob: # If random number is less than the probability
+            path = newPath.copy() # Copy the new path to the old path
+        temp = expTemp(i, alpha, startTemp) # Increment the temperature
+        temps.append(temp) # Record the temperature value
+        lengths.append(pathLength(path)) # Record the path length
+        #print(pathLength(path))
+    return(path, temps, lengths)
+
+path = randPath(30)
+finalPath, temps, lengths = simAnnealingLong(path, startTemp = 4000, numSwaps = 1000, alpha = 0.97)
+print(pathLength(finalPath))
+show_path(finalPath, finalPath[0]);
+plt.figure();
+plt.xscale("log")
+plt.yscale("log")
+plt.xlabel("Temperature")
+plt.ylabel("Path Length")
+plt.title("30 Cities")
+plt.plot(temps,lengths);
+
+# Constant values for the simulation
+tstart=0
+tend=100
+
+d=0.01
+a=1
+M=2500
+K=10000
+l=6
+
+
+def tacoma(dt=0.01, cromer=False, y0=0, z0=0, theta0=0, beta0=0):
+    # Create the variables to store the results
+    times=np.arange(tstart, tend+dt, dt)  # Create the array of model times
+    Nt=len(times)                         # Number of time-steps
+
+    # Create arrays of 0s for all times
+    y=np.zeros(Nt)                    
+    theta=np.zeros(Nt)                   
+    z=np.zeros(Nt) 
+    beta=np.zeros(Nt) 
+
+    # Set the initial conditions
+    y[0] = y0
+    z[0] = z0
+    theta[0] = theta0
+    beta[0] = beta0
+
+
+    # Loop over all of the times and integrate the model
+    for n in range(Nt-1):
+        # Function for change in z
+        dz = -(d*z[n]) - K/(M*a) * (np.exp(a*(y[n] - l * np.sin(theta[n]))) + np.exp(a*(y[n] + l * np.sin(theta[n])))-2)
+        z[n+1] = z[n] + dt*dz
+
+        # Function for change in beta
+        dbeta = -(d*beta[n]) + (3*np.cos(theta[n])/l) * K/(M*a) * (np.exp(a*(y[n]-l*np.sin(theta[n]))) - np.exp(a*(y[n]+l*np.sin(theta[n]))))
+        beta[n+1] = beta[n] + dt*dbeta
+    
+        
+        # Increment angle and vertical displacement using either Cromer's modification or the basic Taylor method
+        if cromer:
+            y[n+1] = y[n] + dt*z[n+1]
+            theta[n+1] = theta[n] + dt*beta[n+1]
+        
+        else:
+            y[n+1] = y[n] + dt*z[n]
+            theta[n+1] = theta[n] + dt*beta[n]
+
+    return times, theta, y
+
+# Plots for Taylor's method
+times, theta0, y0 = tacoma(dt = 0.0001, theta0 = 0, cromer = False)
+times, theta01, y01 = tacoma(dt = 0.0001, theta0 = 0.1, cromer = False)
+times, theta001, y001 = tacoma(dt = 0.0001, theta0 = 0.01, cromer = False)
+
+plt.subplot(2, 1, 2)
+plt.title("Taylor's Method, Theta0 = 0.00")
+plt.plot(times, y0, color = "red");
+plt.xlabel("Time");
+plt.ylabel("Vertical Displacement");
+plt.figure()
+plt.subplot(2, 1, 2)
+plt.plot(times, theta0, color = "red");
+plt.xlabel("Time");
+plt.ylabel("Angular Displacement");
+
+plt.figure()
+plt.subplot(2, 1, 2)
+plt.title("Taylor's Method, Theta0 = 0.01")
+plt.plot(times, y001, color = "blue");
+plt.xlabel("Time");
+plt.ylabel("Vertical Displacement");
+plt.figure()
+plt.subplot(2, 1, 2)
+plt.plot(times, theta001, color = "blue");
+plt.xlabel("Time");
+plt.ylabel("Angular Displacement");
+
+plt.figure()
+plt.subplot(2, 1, 2)
+plt.title("Taylor's Method, Theta0 = 0.10")
+plt.plot(times, y01, color = "green");
+plt.xlabel("Time");
+plt.ylabel("Vertical Displacement");
+plt.figure()
+plt.subplot(2, 1, 2)
+plt.plot(times, theta01, color = "green");
+plt.xlabel("Time");
+plt.ylabel("Angular Displacement");
+
+# Plots for Cromer's modification
+times, theta0, y0 = tacoma(dt = 0.0001, theta0 = 0, cromer = True)
+times, theta01, y01 = tacoma(dt = 0.0001, theta0 = 0.1, cromer = True)
+times, theta001, y001 = tacoma(dt = 0.0001, theta0 = 0.01, cromer = True)
+
+plt.figure()
+plt.subplot(2, 1, 2)
+plt.title("Cromer's Modification, Theta0 = 0.00")
+plt.plot(times, y0, color = "red");
+plt.xlabel("Time");
+plt.ylabel("Vertical Displacement");
+plt.figure()
+plt.subplot(2, 1, 2)
+plt.plot(times, theta0, color = "red");
+plt.xlabel("Time");
+plt.ylabel("Angular Displacement");
+
+plt.figure()
+plt.subplot(2, 1, 2)
+plt.title("Cromer's Modification, Theta0 = 0.01")
+plt.plot(times, y001, color = "blue");
+plt.xlabel("Time");
+plt.ylabel("Vertical Displacement");
+plt.figure()
+plt.subplot(2, 1, 2)
+plt.plot(times, theta001, color = "blue");
+plt.xlabel("Time");
+plt.ylabel("Angular Displacement");
+
+plt.figure()
+plt.subplot(2, 1, 2)
+plt.title("Cromer's Modification, Theta0 = 0.10")
+plt.plot(times, y01, color = "green");
+plt.xlabel("Time");
+plt.ylabel("Vertical Displacement");
+plt.figure()
+plt.subplot(2, 1, 2)
+plt.plot(times, theta01, color = "green");
+plt.xlabel("Time");
+plt.ylabel("Angular Displacement");
+
+def tacomaWind(dt=0.01, cromer=False, y0=0, z0=0, theta0=0, gamma0=0, A=1, omega=3):
+    # Create the variables to store the results
+    times=np.arange(tstart, tend+dt, dt)  # Create the array of model times
+    Nt=len(times)                         # Number of time-steps
+
+    # Create arrays of 0s for all times
+    y=np.zeros(Nt)                   
+    theta=np.zeros(Nt)                   
+    z=np.zeros(Nt) 
+    gamma=np.zeros(Nt) 
+
+    # Set the initial conditions
+    y[0] = y0
+    z[0] = z0
+    theta[0] = theta0
+    gamma[0] = gamma0
+
+
+    # Loop over all of the times and integrate the model
+    for n in range(Nt-1):
+        # Function for change in z including wind acceleration
+        dz = -(d*z[n]) - K/(M*a) * (np.exp(a*(y[n] - l * np.sin(theta[n]))) + np.exp(a*(y[n] + l * np.sin(theta[n])))-2) + A*np.sin(omega*n*dt)
+        z[n+1] = z[n] + dt*dz
+        
+        # Function for change in beta
+        dgamma = -(d*gamma[n]) + (3*np.cos(theta[n])/l) * K/(M*a) * (np.exp(a*(y[n]-l*np.sin(theta[n]))) - np.exp(a*(y[n]+l*np.sin(theta[n]))))
+        gamma[n+1] = gamma[n] + dt*dgamma
+
+        # Increment angle and vertical displacement using either Cromer's modification or the basic Taylor method
+        if cromer:
+            y[n+1] = y[n] + dt*z[n+1]
+            theta[n+1] = theta[n] + dt*gamma[n+1]
+        
+        else:
+            y[n+1] = y[n] + dt*z[n] + A*np.sin(omega*n)
+            theta[n+1] = theta[n] + dt*gamma[n]
+
+
+
+    return times, theta, y
+
+times, theta1, y1 = tacomaWind(dt = 0.0001, theta0 = 0.01, cromer = True, A = 1, omega = 3)
+times, theta2, y2 = tacomaWind(dt = 0.0001, theta0 = 0.01, cromer = True, A = 2, omega = 3)
+
+plt.subplot(2,1,2)
+plt.title("Cromer's Method, Theta0 = 0.01, A = 1, ω = 3")
+plt.plot(times, y1, color = "red");
+plt.xlabel("Time");
+plt.ylabel("Vertical Displacement");
+plt.figure()
+plt.subplot(2,1,2)
+plt.plot(times, theta1, color = "red")
+plt.xlabel("Time");
+plt.ylabel("Angular Displacement");
+
+plt.figure()
+plt.subplot(2,1,2)
+plt.title("Cromer's Method, Theta0 = 0.01, A = 2, ω = 3")
+plt.plot(times, y2, color = "blue");
+plt.xlabel("Time");
+plt.ylabel("Vertical Displacement");
+plt.figure()
+plt.subplot(2,1,2)
+plt.plot(times, theta2, color = "blue")
+plt.xlabel("Time");
+plt.ylabel("Angular Displacement");
+
+times, theta2, y2 = tacomaWind(dt = 0.0001, theta0 = 0.01, cromer = True, A = 2, omega = 2)
+times, theta25, y25 = tacomaWind(dt = 0.0001, theta0 = 0.01, cromer = True, A = 2, omega = 2.5)
+times, theta3, y3 = tacomaWind(dt = 0.0001, theta0 = 0.01, cromer = True, A = 2, omega = 3)
+times, theta35, y35 = tacomaWind(dt = 0.0001, theta0 = 0.01, cromer = True, A = 2, omega = 3.5)
+
+plt.subplot(2,1,2)
+plt.title("Cromer's Method, Theta0 = 0.01, A = 2,  ω = 2")
+plt.plot(times, y2, color = "red");
+plt.xlabel("Time");
+plt.ylabel("Vertical Displacement");
+plt.figure()
+plt.subplot(2,1,2)
+plt.plot(times, theta2, color = "red")
+plt.xlabel("Time");
+plt.ylabel("Angular Displacement");
+
+plt.figure()
+plt.subplot(2,1,2)
+plt.title("Cromer's Method, Theta0 = 0.01, A = 2,  ω = 2.5")
+plt.plot(times, y25, color = "blue");
+plt.xlabel("Time");
+plt.ylabel("Vertical Displacement");
+plt.figure()
+plt.subplot(2,1,2)
+plt.plot(times, theta25, color = "blue")
+plt.xlabel("Time");
+plt.ylabel("Angular Displacement");
+
+plt.figure()
+plt.subplot(2,1,2)
+plt.title("Cromer's Method, Theta0 = 0.01, A = 2,  ω = 3")
+plt.plot(times, y3, color = "green");
+plt.xlabel("Time");
+plt.ylabel("Vertical Displacement");
+plt.figure()
+plt.subplot(2,1,2)
+plt.plot(times, theta3, color = "green")
+plt.xlabel("Time");
+plt.ylabel("Angular Displacement");
+
+plt.figure()
+plt.subplot(2,1,2)
+plt.title("Cromer's Method, Theta0 = 0.01, A = 2,  ω = 3.5")
+plt.plot(times, y35, color = "orange");
+plt.xlabel("Time");
+plt.ylabel("Vertical Displacement");
+plt.figure()
+plt.subplot(2,1,2)
+plt.plot(times, theta35, color = "orange")
+plt.xlabel("Time");
+plt.ylabel("Angular Displacement");
+
+import seaborn as s
+
+dataset = []
+w = []
+
+for i in range(10):
+    times, theta, y = tacomaWind(dt = 0.001, theta0 = 0.01, cromer = True, A = 2, omega = 2 + i/5)
+    dataset.append(theta)
+    w.append(2+i/5)
+
+hm = s.heatmap(np.array(dataset), xticklabels = 0, yticklabels = w, cmap = "seismic", center = 0)
+plt.xlabel("Time (0-100)")
+plt.ylabel("ω, Force Frequency")
+plt.show();
+
+colours = ["deeppink", "firebrick", "gold", "lightgreen", "deepskyblue"]
+for i in range(5):
+    times, theta, y = tacomaWind(dt = 0.001, theta0 = 0.01, cromer = True, A = 2, omega = 2 + i/2)
+    thisLabel = f"ω = {2 + i/2}"
+    plt.plot(y, theta, label = thisLabel, color = colours[i])
+    plt.xlabel("Vertical Displacement, y")
+    plt.ylabel("Torsion Angle, θ")
+
+plt.legend()
+plt.show();
